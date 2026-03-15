@@ -7,27 +7,37 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  BadgeCheck,
+  Award,
+  Briefcase,
   Check,
   ChevronDown,
   ChevronUp,
   Download,
+  Eye,
+  FileText,
+  FolderOpen,
+  Globe,
+  GraduationCap,
   Layers,
-  Loader2,
+  Lightbulb,
+  Palette,
+  PencilLine,
   Printer,
   Sparkles,
+  Target,
+  User,
   X,
-  Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useMemo, useState } from "react";
-import { toast } from "sonner";
 import type { ResumeData } from "../backend";
 import { SAMPLE_RESUME } from "../data/sampleResume";
 import { calculateATSScore } from "../utils/atsScore";
 import { AIAssistantPanel } from "./AIAssistantPanel";
 import { ATSGauge } from "./ATSGauge";
+import { CustomerCareWidget } from "./CustomerCareWidget";
 import { EditorSidebar } from "./EditorSidebar";
+import { PaywallScreen } from "./PaywallScreen";
 import { ResumePreview } from "./ResumePreview";
 import { CertificationsEditor } from "./editors/CertificationsEditor";
 import { EducationEditor } from "./editors/EducationEditor";
@@ -65,8 +75,6 @@ export type Template =
   | "photo-modern"
   | "photo-sidebar";
 
-const RAZORPAY_KEY = "rzp_live_SREVhKAcH7xaGm";
-
 const SECTION_TITLES: Record<Section, string> = {
   personal: "Personal Information",
   summary: "Professional Summary",
@@ -79,6 +87,59 @@ const SECTION_TITLES: Record<Section, string> = {
   target: "Target Job Description",
   templates: "Choose Template",
 };
+
+const SECTIONS_LIST: {
+  id: Section;
+  label: string;
+  shortLabel: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  {
+    id: "personal",
+    label: "Personal Information",
+    shortLabel: "Personal",
+    icon: User,
+  },
+  {
+    id: "summary",
+    label: "Professional Summary",
+    shortLabel: "Summary",
+    icon: FileText,
+  },
+  {
+    id: "experience",
+    label: "Work Experience",
+    shortLabel: "Experience",
+    icon: Briefcase,
+  },
+  {
+    id: "education",
+    label: "Education",
+    shortLabel: "Education",
+    icon: GraduationCap,
+  },
+  { id: "skills", label: "Skills", shortLabel: "Skills", icon: Lightbulb },
+  {
+    id: "certifications",
+    label: "Certifications",
+    shortLabel: "Certs",
+    icon: Award,
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    shortLabel: "Projects",
+    icon: FolderOpen,
+  },
+  { id: "languages", label: "Languages", shortLabel: "Languages", icon: Globe },
+  { id: "target", label: "Target Job", shortLabel: "Target Job", icon: Target },
+  {
+    id: "templates",
+    label: "Templates",
+    shortLabel: "Templates",
+    icon: Palette,
+  },
+];
 
 const TEMPLATES: { id: Template; label: string; description: string }[] = [
   { id: "modern", label: "Modern", description: "Clean lines, sidebar accent" },
@@ -111,46 +172,39 @@ const TEMPLATES: { id: Template; label: string; description: string }[] = [
   },
 ];
 
-function loadRazorpayScript(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (document.getElementById("razorpay-script")) {
-      resolve(true);
-      return;
-    }
-    const script = document.createElement("script");
-    script.id = "razorpay-script";
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
-}
-
 /**
- * Opens a dedicated print window containing only the resume content.
- * Copies all stylesheets from the current page so Tailwind/fonts render correctly.
+ * Prints only the resume content using a hidden iframe (no pop-up required).
  */
 function printResumeOnly() {
   const resumeEl = document.getElementById("resume-print-target");
   if (!resumeEl) {
-    alert("Resume preview not found. Please try again.");
+    console.error("Resume preview not found.");
     return;
   }
 
-  const newWindow = window.open("", "_blank");
-  if (!newWindow) {
-    alert("Pop-up blocked. Please allow pop-ups for this site and try again.");
-    return;
-  }
-
-  // Copy all link[rel=stylesheet] and style tags from current document head
   const styleNodes = Array.from(
     document.querySelectorAll('link[rel="stylesheet"], style'),
   )
     .map((node) => node.outerHTML)
     .join("\n");
 
-  newWindow.document.write(`<!DOCTYPE html>
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute(
+    "style",
+    "position:absolute;width:0;height:0;border:0;left:-9999px;top:-9999px;",
+  );
+  document.body.appendChild(iframe);
+
+  try {
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      console.error("Could not access iframe document.");
+      document.body.removeChild(iframe);
+      return;
+    }
+
+    iframeDoc.open();
+    iframeDoc.write(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -166,151 +220,28 @@ function printResumeOnly() {
   ${resumeEl.outerHTML}
 </body>
 </html>`);
+    iframeDoc.close();
 
-  newWindow.document.close();
-
-  setTimeout(() => {
-    newWindow.print();
-    newWindow.close();
-  }, 600);
-}
-
-interface DownloadPaywallDialogProps {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  onPaymentSuccess: () => void;
-}
-
-function DownloadPaywallDialog({
-  open,
-  onOpenChange,
-  onPaymentSuccess,
-}: DownloadPaywallDialogProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
-
-  const handlePay = async () => {
-    setIsLoading(true);
-    setPaymentError(null);
-
-    const loaded = await loadRazorpayScript();
-    if (!loaded) {
-      setPaymentError("Failed to load payment gateway. Please try again.");
-      setIsLoading(false);
-      return;
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.print();
+      } catch (e) {
+        console.error("Print failed:", e);
+      }
+      const cleanup = () => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      };
+      iframe.contentWindow?.addEventListener("afterprint", cleanup);
+      setTimeout(cleanup, 2000);
+    }, 600);
+  } catch (e) {
+    console.error("iframe print error:", e);
+    if (document.body.contains(iframe)) {
+      document.body.removeChild(iframe);
     }
-
-    const Razorpay = (window as any).Razorpay;
-    if (!Razorpay) {
-      setPaymentError("Payment gateway unavailable. Please try again.");
-      setIsLoading(false);
-      return;
-    }
-
-    const options = {
-      key: RAZORPAY_KEY,
-      amount: 100,
-      currency: "INR",
-      name: "ProResume",
-      description: "Download Resume — One-time payment",
-      theme: { color: "#6366f1" },
-      handler: (_response: { razorpay_payment_id: string }) => {
-        toast.success("Payment successful! Downloading your resume…");
-        onOpenChange(false);
-        setIsLoading(false);
-        setTimeout(() => onPaymentSuccess(), 300);
-      },
-      modal: {
-        ondismiss: () => {
-          setIsLoading(false);
-          setPaymentError("Payment was cancelled. Try again when ready.");
-        },
-      },
-    };
-
-    const rzp = new (window as any).Razorpay(options);
-    rzp.on("payment.failed", () => {
-      setIsLoading(false);
-      setPaymentError(
-        "Payment failed. Please try again or use a different method.",
-      );
-    });
-    rzp.open();
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm" data-ocid="download.dialog">
-        <DialogHeader>
-          <DialogTitle className="font-display text-lg font-bold">
-            Download Your Resume
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4 pt-1">
-          {/* Price */}
-          <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-center">
-            <div className="flex items-baseline justify-center gap-1">
-              <span className="text-sm text-muted-foreground">₹</span>
-              <span className="font-display text-3xl font-bold text-foreground">
-                1
-              </span>
-            </div>
-            <div className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-              <BadgeCheck className="h-3.5 w-3.5 text-green-500" />
-              One-time payment per download
-            </div>
-          </div>
-
-          {/* UPI Badges */}
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <span className="text-xs text-muted-foreground">Pay via</span>
-            {["Google Pay", "PhonePe", "Paytm", "UPI"].map((method) => (
-              <span
-                key={method}
-                className="rounded border border-border bg-card px-2 py-0.5 text-xs font-medium text-foreground"
-              >
-                {method}
-              </span>
-            ))}
-          </div>
-
-          {/* CTA */}
-          <Button
-            onClick={handlePay}
-            disabled={isLoading}
-            className="w-full"
-            data-ocid="download.primary_button"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Opening payment…
-              </>
-            ) : (
-              <>
-                <Zap className="mr-2 h-4 w-4" />
-                Pay ₹1 &amp; Download
-              </>
-            )}
-          </Button>
-
-          {paymentError && (
-            <p
-              className="text-center text-xs text-destructive"
-              data-ocid="download.error_state"
-            >
-              {paymentError}
-            </p>
-          )}
-
-          <p className="text-center text-xs text-muted-foreground">
-            No sign-in required. Pay ₹1 per download.
-          </p>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+  }
 }
 
 interface PrintPreviewDialogProps {
@@ -376,7 +307,7 @@ function PrintPreviewDialog({
             data-ocid="preview.download_button"
           >
             <Download className="mr-1.5 h-3.5 w-3.5" />
-            Download PDF
+            Download PDF — ₹1
           </Button>
         </div>
       </DialogContent>
@@ -422,18 +353,125 @@ function TemplatePicker({ template, onSelect }: TemplatePickerProps) {
   );
 }
 
+/** Mobile horizontal scrollable section selector */
+function MobileSectionNav({
+  activeSection,
+  onSelect,
+}: {
+  activeSection: Section;
+  onSelect: (s: Section) => void;
+}) {
+  return (
+    <div className="no-print overflow-x-auto border-b border-border bg-card">
+      <div className="flex gap-1 px-3 py-2" style={{ minWidth: "max-content" }}>
+        {SECTIONS_LIST.map(({ id, shortLabel, icon: Icon }) => {
+          const isActive = activeSection === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onSelect(id)}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              data-ocid={`mobile.nav.${id}.tab`}
+            >
+              <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+              {shortLabel}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Mobile bottom tab bar */
+function MobileBottomBar({
+  mobileView,
+  onChangeView,
+  onDownload,
+  atsScore,
+}: {
+  mobileView: "edit" | "preview";
+  onChangeView: (v: "edit" | "preview") => void;
+  onDownload: () => void;
+  atsScore: number;
+}) {
+  const scoreColor =
+    atsScore >= 80
+      ? "bg-emerald-500"
+      : atsScore >= 60
+        ? "bg-amber-500"
+        : "bg-red-500";
+
+  return (
+    <nav
+      className="no-print fixed bottom-0 left-0 right-0 z-30 flex h-16 items-stretch border-t border-border bg-card shadow-lg md:hidden"
+      data-ocid="mobile.bottom.panel"
+    >
+      {/* Edit tab */}
+      <button
+        type="button"
+        className={`flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium transition-colors ${
+          mobileView === "edit"
+            ? "text-primary"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+        onClick={() => onChangeView("edit")}
+        data-ocid="mobile.edit.tab"
+      >
+        <PencilLine className="h-5 w-5" />
+        Edit
+      </button>
+
+      {/* Preview tab */}
+      <button
+        type="button"
+        className={`relative flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium transition-colors ${
+          mobileView === "preview"
+            ? "text-primary"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+        onClick={() => onChangeView("preview")}
+        data-ocid="mobile.preview.tab"
+      >
+        <div className="relative">
+          <Eye className="h-5 w-5" />
+          <span
+            className={`absolute -right-1.5 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white ${scoreColor}`}
+          >
+            {atsScore >= 80 ? "✓" : "!"}
+          </span>
+        </div>
+        Preview
+      </button>
+
+      {/* Download tab */}
+      <button
+        type="button"
+        className="flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        onClick={onDownload}
+        data-ocid="mobile.download.button"
+      >
+        <Download className="h-5 w-5" />
+        Download
+      </button>
+    </nav>
+  );
+}
+
 export function BuilderPage() {
   const [resume, setResume] = useState<ResumeData>(SAMPLE_RESUME);
   const [activeSection, setActiveSection] = useState<Section>("personal");
   const [template, setTemplate] = useState<Template>("modern");
   const [showATS, setShowATS] = useState(true);
-  const [showDownloadPaywall, setShowDownloadPaywall] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
   const [showAI, setShowAI] = useState(false);
-  // Local flag to immediately unlock download after payment within the same session
-  const [paidLocally, setPaidLocally] = useState(false);
-
-  const isPaid = paidLocally;
+  const [mobileView, setMobileView] = useState<"edit" | "preview">("edit");
 
   const updateResume = useCallback(
     (updater: (prev: ResumeData) => ResumeData) => {
@@ -444,20 +482,20 @@ export function BuilderPage() {
 
   const atsResult = useMemo(() => calculateATSScore(resume), [resume]);
 
-  // Opens the free print preview
   const handlePrint = () => {
     setShowPrintPreview(true);
   };
 
-  // Called when user clicks "Download PDF" inside preview
+  // Clicking "Download PDF" from the preview dialog shows the paywall
   const handleDownloadFromPreview = () => {
-    if (isPaid) {
-      setShowPrintPreview(false);
-      setTimeout(() => printResumeOnly(), 300);
-    } else {
-      setShowPrintPreview(false);
-      setShowDownloadPaywall(true);
-    }
+    setShowPrintPreview(false);
+    setShowPaywall(true);
+  };
+
+  // After successful payment, proceed with the actual PDF download
+  const handlePaymentSuccess = () => {
+    setShowPaywall(false);
+    setTimeout(() => printResumeOnly(), 300);
   };
 
   const handleInsertSummary = useCallback(
@@ -543,19 +581,38 @@ export function BuilderPage() {
     }
   };
 
+  // Show paywall full-screen if user clicked Download
+  if (showPaywall) {
+    return (
+      <PaywallScreen
+        onPaymentSuccess={handlePaymentSuccess}
+        onCancel={() => setShowPaywall(false)}
+      />
+    );
+  }
+
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background md:flex-row">
+      {/* ── Desktop sidebar (hidden on mobile) ── */}
       <EditorSidebar
         activeSection={activeSection}
         onSelect={setActiveSection}
         atsScore={atsResult.total}
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Editor Panel */}
-        <div className="no-print flex w-[400px] flex-shrink-0 flex-col overflow-hidden border-r border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border px-5 py-3">
-            <h2 className="font-display text-base font-semibold text-foreground">
+      {/* ── Main content area ── */}
+      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
+        {/* ── EDITOR PANEL ── visible on desktop always; on mobile only when mobileView=edit ── */}
+        <div
+          className={`no-print flex flex-col overflow-hidden border-border bg-card ${
+            mobileView === "edit"
+              ? "flex flex-1 border-r md:w-[400px] md:flex-none"
+              : "hidden md:flex md:w-[400px] md:flex-shrink-0 md:border-r"
+          }`}
+        >
+          {/* Editor header */}
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h2 className="font-display text-sm font-semibold text-foreground md:text-base">
               {SECTION_TITLES[activeSection]}
             </h2>
             <div className="flex items-center gap-2">
@@ -572,7 +629,16 @@ export function BuilderPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5">
+          {/* Mobile section pill nav (hidden on desktop) */}
+          <div className="md:hidden">
+            <MobileSectionNav
+              activeSection={activeSection}
+              onSelect={setActiveSection}
+            />
+          </div>
+
+          {/* Editor content */}
+          <div className="flex-1 overflow-y-auto p-4 pb-20 md:p-5 md:pb-5">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeSection}
@@ -587,10 +653,16 @@ export function BuilderPage() {
           </div>
         </div>
 
-        {/* Preview + ATS Area */}
-        <div className="flex flex-1 flex-col overflow-hidden bg-muted/30">
-          {/* Top bar */}
-          <div className="no-print flex items-center justify-between border-b border-border bg-card px-5 py-2.5">
+        {/* ── PREVIEW + ATS AREA ── visible on desktop always; on mobile only when mobileView=preview ── */}
+        <div
+          className={`flex flex-col overflow-hidden bg-muted/30 ${
+            mobileView === "preview"
+              ? "flex flex-1"
+              : "hidden md:flex md:flex-1"
+          }`}
+        >
+          {/* Preview top bar */}
+          <div className="no-print flex items-center justify-between border-b border-border bg-card px-4 py-2.5">
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
               <span className="text-sm font-medium text-foreground">
@@ -605,7 +677,9 @@ export function BuilderPage() {
                 className="h-8 text-xs"
                 data-ocid="preview.primary_button"
               >
-                <Printer className="mr-1.5 h-3.5 w-3.5" /> Print / Export PDF
+                <Printer className="mr-1.5 h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Print / Export PDF</span>
+                <span className="sm:hidden">Export</span>
               </Button>
             </div>
           </div>
@@ -614,7 +688,7 @@ export function BuilderPage() {
           <div className="no-print border-b border-border bg-card">
             <button
               type="button"
-              className="flex w-full items-center justify-between px-5 py-2.5 text-left"
+              className="flex w-full items-center justify-between px-4 py-2.5 text-left"
               onClick={() => setShowATS((v) => !v)}
               data-ocid="ats.panel.toggle"
             >
@@ -645,33 +719,40 @@ export function BuilderPage() {
             </AnimatePresence>
           </div>
 
-          {/* Resume Preview */}
+          {/* Resume Preview — scaled on mobile to fit width */}
           <div
             id="resume-preview-wrapper"
-            className="flex-1 overflow-y-auto px-6 py-8"
+            className="flex-1 overflow-y-auto px-4 pt-4 pb-20 md:px-6 md:py-8"
           >
-            <ResumePreview resume={resume} template={template} />
+            {/* Mobile scaled wrapper */}
+            <div className="md:hidden">
+              <MobileResumeScale>
+                <ResumePreview resume={resume} template={template} />
+              </MobileResumeScale>
+            </div>
+            {/* Desktop normal */}
+            <div className="hidden md:block">
+              <ResumePreview resume={resume} template={template} />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Print Preview Dialog (free) */}
+      {/* ── Mobile bottom navigation bar ── */}
+      <MobileBottomBar
+        mobileView={mobileView}
+        onChangeView={setMobileView}
+        onDownload={handlePrint}
+        atsScore={atsResult.total}
+      />
+
+      {/* Print Preview Dialog (free to view) */}
       <PrintPreviewDialog
         open={showPrintPreview}
         onClose={() => setShowPrintPreview(false)}
         resume={resume}
         template={template}
         onDownload={handleDownloadFromPreview}
-      />
-
-      {/* Download Paywall Dialog */}
-      <DownloadPaywallDialog
-        open={showDownloadPaywall}
-        onOpenChange={setShowDownloadPaywall}
-        onPaymentSuccess={() => {
-          setPaidLocally(true);
-          printResumeOnly();
-        }}
       />
 
       {/* AI Assistant Panel */}
@@ -681,6 +762,47 @@ export function BuilderPage() {
         resumeData={resume}
         onInsertSummary={handleInsertSummary}
       />
+
+      {/* Customer Care Widget */}
+      <CustomerCareWidget />
+    </div>
+  );
+}
+
+/**
+ * Scales the A4 resume preview to fit the current mobile viewport width.
+ * Uses a CSS transform so the resume renders at full resolution but appears smaller.
+ */
+function MobileResumeScale({ children }: { children: React.ReactNode }) {
+  // A4 width in px at 96dpi ≈ 794px. We leave ~32px total horizontal padding.
+  const A4_WIDTH = 794;
+  const PADDING = 32;
+
+  // Calculate scale using window.innerWidth at render time.
+  // This is fine as a static calculation — a resize listener would be overkill here.
+  const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 390;
+  const availableWidth = viewportWidth - PADDING;
+  const scale = Math.min(1, availableWidth / A4_WIDTH);
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        // Shrink the container height proportionally to avoid extra whitespace
+        height: `calc(${A4_WIDTH * Math.SQRT2}px * ${scale})`,
+        overflow: "visible",
+        marginBottom: "1rem",
+      }}
+    >
+      <div
+        style={{
+          transformOrigin: "top left",
+          transform: `scale(${scale})`,
+          width: `${A4_WIDTH}px`,
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

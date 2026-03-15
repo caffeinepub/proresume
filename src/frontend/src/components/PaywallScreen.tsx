@@ -5,7 +5,6 @@ import {
   FileDown,
   Layers,
   Loader2,
-  LogOut,
   Save,
   Sparkles,
   Star,
@@ -28,16 +27,21 @@ const FEATURES = [
   },
   { icon: Layers, label: "Live Resume Preview", sub: "See changes instantly" },
   { icon: FileDown, label: "PDF Export", sub: "Print-ready, ATS-friendly" },
-  { icon: Sparkles, label: "2 Pro Templates", sub: "Modern & Classic" },
+  {
+    icon: Sparkles,
+    label: "12+ Pro Templates",
+    sub: "Including photo templates",
+  },
   { icon: Save, label: "Auto-Save", sub: "Never lose your work" },
 ];
 
 const RAZORPAY_KEY = "rzp_live_SREVhKAcH7xaGm";
+const DOWNLOAD_PRICE_PAISE = 100; // ₹1
+const DOWNLOAD_PRICE_DISPLAY = 1;
 
 interface PaywallScreenProps {
-  onSignOut: () => void;
-  verifyingSessionId?: string | null;
-  onVerifyComplete: (success: boolean) => void;
+  onPaymentSuccess: () => void;
+  onCancel: () => void;
 }
 
 function loadRazorpayScript(): Promise<boolean> {
@@ -56,8 +60,8 @@ function loadRazorpayScript(): Promise<boolean> {
 }
 
 export function PaywallScreen({
-  onSignOut,
-  onVerifyComplete,
+  onPaymentSuccess,
+  onCancel,
 }: PaywallScreenProps) {
   const recordPayment = useRecordRazorpayPayment();
   const [isLoading, setIsLoading] = useState(false);
@@ -83,20 +87,18 @@ export function PaywallScreen({
 
     const options = {
       key: RAZORPAY_KEY,
-      amount: 100,
+      amount: DOWNLOAD_PRICE_PAISE,
       currency: "INR",
       name: "ProResume",
-      description: "Lifetime Access - ATS Resume Builder",
+      description: "Resume PDF Download",
       theme: { color: "#6366f1" },
       handler: async (response: { razorpay_payment_id: string }) => {
         try {
           await recordPayment.mutateAsync(response.razorpay_payment_id);
-          onVerifyComplete(true);
+          onPaymentSuccess();
         } catch {
-          setPaymentError(
-            "Payment recorded but verification failed. Please contact support.",
-          );
-          onVerifyComplete(false);
+          // Even if backend recording fails, allow download since payment succeeded
+          onPaymentSuccess();
         } finally {
           setIsLoading(false);
         }
@@ -104,7 +106,7 @@ export function PaywallScreen({
       modal: {
         ondismiss: () => {
           setIsLoading(false);
-          setPaymentError("Payment was cancelled. Try again when ready.");
+          onCancel();
         },
       },
     };
@@ -153,22 +155,21 @@ export function PaywallScreen({
             </motion.div>
 
             <h1 className="font-display text-3xl font-bold leading-tight text-pw-heading">
-              Get <em className="pw-italic">instant</em> access
+              Download your <em className="pw-italic">resume</em>
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-pw-muted">
-              One payment. Lifetime access. Build ATS-perfect resumes that land
-              you interviews.
+              One-time payment to download your ATS-perfect resume as PDF.
             </p>
 
             {/* Price block */}
             <div className="paywall-price-block mt-6">
               <div className="flex items-baseline gap-1">
                 <span className="paywall-currency">₹</span>
-                <span className="paywall-amount">1</span>
+                <span className="paywall-amount">{DOWNLOAD_PRICE_DISPLAY}</span>
               </div>
               <div className="paywall-price-tag">
                 <BadgeCheck className="h-3.5 w-3.5" />
-                One-time · No subscription · Lifetime access
+                One-time · Per download · No subscription
               </div>
             </div>
           </div>
@@ -231,7 +232,7 @@ export function PaywallScreen({
               ) : (
                 <>
                   <Zap className="mr-2 h-4 w-4" />
-                  Unlock Full Access — ₹1
+                  Pay ₹{DOWNLOAD_PRICE_DISPLAY} & Download PDF
                 </>
               )}
             </Button>
@@ -248,12 +249,11 @@ export function PaywallScreen({
             <div className="mt-4 flex items-center justify-center">
               <button
                 type="button"
-                onClick={onSignOut}
+                onClick={onCancel}
                 className="paywall-signout-btn"
-                data-ocid="paywall.secondary_button"
+                data-ocid="paywall.cancel_button"
               >
-                <LogOut className="h-3.5 w-3.5" />
-                Sign out
+                Cancel
               </button>
             </div>
           </div>
