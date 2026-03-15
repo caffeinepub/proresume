@@ -86,12 +86,14 @@ export function useRecordRazorpayPayment() {
   return useMutation({
     mutationFn: async (paymentId: string) => {
       if (!actor) throw new Error("Not authenticated");
-      // Cast to any since recordRazorpayPayment is added at runtime by the canister
       return (actor as any).recordRazorpayPayment(
         paymentId,
       ) as Promise<boolean>;
     },
     onSuccess: () => {
+      // Immediately set all isPaid cache entries to true so the UI
+      // reflects paid status without waiting for a background refetch.
+      queryClient.setQueriesData<boolean>({ queryKey: ["isPaid"] }, () => true);
       queryClient.invalidateQueries({ queryKey: ["isPaid"] });
     },
   });

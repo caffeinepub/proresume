@@ -91,9 +91,9 @@ actor {
   let razorpayPayments = Map.empty<Principal, Text>();
   var stripe : ?Stripe.StripeConfiguration = null;
 
-  // Check if caller has paid
-  public query ({ caller }) func isPaid() : async Bool {
-    paidUsers.containsKey(caller);
+  // Check if a given user has paid (pass caller's principal from frontend)
+  public query func isPaid(user : Principal) : async Bool {
+    paidUsers.containsKey(user);
   };
 
   // Record a Razorpay payment and mark user as paid
@@ -167,7 +167,7 @@ actor {
     };
   };
 
-  // Save resume - only requires payment, not role-based access control
+  // Save resume - only requires sign-in and payment, no role check
   public shared ({ caller }) func saveResume(resume : ResumeData) : async () {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Must be signed in");

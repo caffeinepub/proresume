@@ -9,31 +9,21 @@ import {
 import {
   BadgeCheck,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Download,
   Layers,
   Loader2,
-  LogIn,
-  LogOut,
   Printer,
   Sparkles,
   X,
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { ResumeData } from "../backend";
 import { SAMPLE_RESUME } from "../data/sampleResume";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import {
-  useGetResume,
-  useIsPaid,
-  useRecordRazorpayPayment,
-  useSaveResume,
-} from "../hooks/useQueries";
 import { calculateATSScore } from "../utils/atsScore";
 import { AIAssistantPanel } from "./AIAssistantPanel";
 import { ATSGauge } from "./ATSGauge";
@@ -74,8 +64,6 @@ export type Template =
   | "academic"
   | "photo-modern"
   | "photo-sidebar";
-
-type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 const RAZORPAY_KEY = "rzp_live_SREVhKAcH7xaGm";
 
@@ -149,7 +137,6 @@ function DownloadPaywallDialog({
   onOpenChange,
   onPaymentSuccess,
 }: DownloadPaywallDialogProps) {
-  const recordPayment = useRecordRazorpayPayment();
   const [isLoading, setIsLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
@@ -178,19 +165,11 @@ function DownloadPaywallDialog({
       name: "ProResume",
       description: "Download Resume — One-time payment",
       theme: { color: "#6366f1" },
-      handler: async (response: { razorpay_payment_id: string }) => {
-        try {
-          await recordPayment.mutateAsync(response.razorpay_payment_id);
-          toast.success("Payment successful! Downloading your resume…");
-          onOpenChange(false);
-          onPaymentSuccess();
-        } catch {
-          setPaymentError(
-            "Payment recorded but verification failed. Please contact support.",
-          );
-        } finally {
-          setIsLoading(false);
-        }
+      handler: (_response: { razorpay_payment_id: string }) => {
+        toast.success("Payment successful! Downloading your resume…");
+        onOpenChange(false);
+        setIsLoading(false);
+        setTimeout(() => onPaymentSuccess(), 300);
       },
       modal: {
         ondismiss: () => {
@@ -225,12 +204,12 @@ function DownloadPaywallDialog({
             <div className="flex items-baseline justify-center gap-1">
               <span className="text-sm text-muted-foreground">₹</span>
               <span className="font-display text-3xl font-bold text-foreground">
-                500
+                1
               </span>
             </div>
             <div className="mt-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
               <BadgeCheck className="h-3.5 w-3.5 text-green-500" />
-              One-time payment · Lifetime downloads
+              One-time payment per download
             </div>
           </div>
 
@@ -250,14 +229,14 @@ function DownloadPaywallDialog({
           {/* CTA */}
           <Button
             onClick={handlePay}
-            disabled={isLoading || recordPayment.isPending}
+            disabled={isLoading}
             className="w-full"
             data-ocid="download.primary_button"
           >
-            {isLoading || recordPayment.isPending ? (
+            {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {recordPayment.isPending ? "Confirming…" : "Opening payment…"}
+                Opening payment…
               </>
             ) : (
               <>
@@ -277,7 +256,7 @@ function DownloadPaywallDialog({
           )}
 
           <p className="text-center text-xs text-muted-foreground">
-            Once paid, you can download anytime — no repeat payment needed.
+            No sign-in required. Pay ₹1 per download.
           </p>
         </div>
       </DialogContent>
@@ -398,64 +377,20 @@ export function BuilderPage() {
   const [resume, setResume] = useState<ResumeData>(SAMPLE_RESUME);
   const [activeSection, setActiveSection] = useState<Section>("personal");
   const [template, setTemplate] = useState<Template>("modern");
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [showATS, setShowATS] = useState(true);
-  const [initialized, setInitialized] = useState(false);
   const [showDownloadPaywall, setShowDownloadPaywall] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showAI, setShowAI] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Local flag to immediately unlock download after payment within the same session
+  const [paidLocally, setPaidLocally] = useState(false);
 
-  const { identity, login, clear, isLoggingIn } = useInternetIdentity();
-  const isLoggedIn = !!identity;
-  const principal = identity?.getPrincipal();
-
-  const { data: isPaidData, isLoading: isPaidLoading } = useIsPaid(principal);
-  const { data: savedResume, isLoading: resumeLoading } = useGetResume();
-  const saveMutation = useSaveResume();
-
-  const isPaid = isPaidData === true;
-
-  // Load saved resume once paid and logged in
-  useEffect(() => {
-    if (!initialized && !resumeLoading && isLoggedIn && isPaid) {
-      if (savedResume) {
-        setResume(savedResume);
-      }
-      setInitialized(true);
-    }
-  }, [savedResume, resumeLoading, initialized, isLoggedIn, isPaid]);
-
-  const triggerSave = useCallback(
-    (data: ResumeData) => {
-      if (!isLoggedIn || !isPaid) return;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      setSaveStatus("saving");
-      saveTimerRef.current = setTimeout(() => {
-        saveMutation.mutate(data, {
-          onSuccess: () => {
-            setSaveStatus("saved");
-            setTimeout(() => setSaveStatus("idle"), 2000);
-          },
-          onError: () => {
-            setSaveStatus("error");
-            toast.error("Failed to save resume. Please try again.");
-          },
-        });
-      }, 1500);
-    },
-    [isLoggedIn, isPaid, saveMutation],
-  );
+  const isPaid = paidLocally;
 
   const updateResume = useCallback(
     (updater: (prev: ResumeData) => ResumeData) => {
-      setResume((prev) => {
-        const next = updater(prev);
-        triggerSave(next);
-        return next;
-      });
+      setResume((prev) => updater(prev));
     },
-    [triggerSave],
+    [],
   );
 
   const atsResult = useMemo(() => calculateATSScore(resume), [resume]);
@@ -467,14 +402,6 @@ export function BuilderPage() {
 
   // Called when user clicks "Download PDF" inside preview
   const handleDownloadFromPreview = () => {
-    if (!isLoggedIn) {
-      toast.error("Please sign in to download your resume.");
-      return;
-    }
-    if (isPaidLoading) {
-      toast.info("Checking payment status, please wait…");
-      return;
-    }
     if (isPaid) {
       setShowPrintPreview(false);
       setTimeout(() => window.print(), 300);
@@ -593,37 +520,8 @@ export function BuilderPage() {
                 <Sparkles className="h-3.5 w-3.5" />
                 AI Assist
               </Button>
-              <SaveIndicator
-                status={saveStatus}
-                isLoggedIn={isLoggedIn && isPaid}
-              />
             </div>
           </div>
-
-          {!isLoggedIn && (
-            <div className="border-b border-border bg-muted/60 px-5 py-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  Sign in to save your resume &amp; enable download
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={login}
-                  disabled={isLoggingIn}
-                  className="h-7 text-xs"
-                  data-ocid="auth.primary_button"
-                >
-                  {isLoggingIn ? (
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  ) : (
-                    <LogIn className="mr-1 h-3 w-3" />
-                  )}
-                  Sign In
-                </Button>
-              </div>
-            </div>
-          )}
 
           <div className="flex-1 overflow-y-auto p-5">
             <AnimatePresence mode="wait">
@@ -651,17 +549,6 @@ export function BuilderPage() {
               </span>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
-              {isLoggedIn && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clear}
-                  className="h-8 text-xs text-muted-foreground"
-                  data-ocid="auth.secondary_button"
-                >
-                  <LogOut className="mr-1 h-3.5 w-3.5" /> Sign Out
-                </Button>
-              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -732,7 +619,10 @@ export function BuilderPage() {
       <DownloadPaywallDialog
         open={showDownloadPaywall}
         onOpenChange={setShowDownloadPaywall}
-        onPaymentSuccess={() => window.print()}
+        onPaymentSuccess={() => {
+          setPaidLocally(true);
+          window.print();
+        }}
       />
 
       {/* AI Assistant Panel */}
@@ -742,38 +632,6 @@ export function BuilderPage() {
         resumeData={resume}
         onInsertSummary={handleInsertSummary}
       />
-    </div>
-  );
-}
-
-function SaveIndicator({
-  status,
-  isLoggedIn,
-}: { status: SaveStatus; isLoggedIn: boolean }) {
-  if (!isLoggedIn) return null;
-  if (status === "idle") return null;
-  return (
-    <div className="flex items-center gap-1.5" data-ocid="editor.loading_state">
-      {status === "saving" && (
-        <>
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Saving…</span>
-        </>
-      )}
-      {status === "saved" && (
-        <>
-          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-          <span className="text-xs text-green-600">Saved</span>
-        </>
-      )}
-      {status === "error" && (
-        <span
-          className="text-xs text-destructive"
-          data-ocid="editor.error_state"
-        >
-          Save failed
-        </span>
-      )}
     </div>
   );
 }
