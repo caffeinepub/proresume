@@ -126,6 +126,55 @@ function loadRazorpayScript(): Promise<boolean> {
   });
 }
 
+/**
+ * Opens a dedicated print window containing only the resume content.
+ * Copies all stylesheets from the current page so Tailwind/fonts render correctly.
+ */
+function printResumeOnly() {
+  const resumeEl = document.getElementById("resume-print-target");
+  if (!resumeEl) {
+    alert("Resume preview not found. Please try again.");
+    return;
+  }
+
+  const newWindow = window.open("", "_blank");
+  if (!newWindow) {
+    alert("Pop-up blocked. Please allow pop-ups for this site and try again.");
+    return;
+  }
+
+  // Copy all link[rel=stylesheet] and style tags from current document head
+  const styleNodes = Array.from(
+    document.querySelectorAll('link[rel="stylesheet"], style'),
+  )
+    .map((node) => node.outerHTML)
+    .join("\n");
+
+  newWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resume</title>
+  ${styleNodes}
+  <style>
+    body { margin: 0; padding: 0; background: white; }
+    @page { margin: 0; size: A4; }
+  </style>
+</head>
+<body>
+  ${resumeEl.outerHTML}
+</body>
+</html>`);
+
+  newWindow.document.close();
+
+  setTimeout(() => {
+    newWindow.print();
+    newWindow.close();
+  }, 600);
+}
+
 interface DownloadPaywallDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -404,7 +453,7 @@ export function BuilderPage() {
   const handleDownloadFromPreview = () => {
     if (isPaid) {
       setShowPrintPreview(false);
-      setTimeout(() => window.print(), 300);
+      setTimeout(() => printResumeOnly(), 300);
     } else {
       setShowPrintPreview(false);
       setShowDownloadPaywall(true);
@@ -621,7 +670,7 @@ export function BuilderPage() {
         onOpenChange={setShowDownloadPaywall}
         onPaymentSuccess={() => {
           setPaidLocally(true);
-          window.print();
+          printResumeOnly();
         }}
       />
 
