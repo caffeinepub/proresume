@@ -307,7 +307,7 @@ function PrintPreviewDialog({
             data-ocid="preview.download_button"
           >
             <Download className="mr-1.5 h-3.5 w-3.5" />
-            Download PDF — ₹1
+            Download PDF — ₹49
           </Button>
         </div>
       </DialogContent>
