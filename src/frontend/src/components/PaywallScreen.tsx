@@ -36,8 +36,8 @@ const FEATURES = [
 ];
 
 const RAZORPAY_KEY = "rzp_live_SREVhKAcH7xaGm";
-const DOWNLOAD_PRICE_PAISE = 4900; // ₹49
-const DOWNLOAD_PRICE_DISPLAY = 49;
+const DOWNLOAD_PRICE_PAISE = 2500; // ₹25
+const DOWNLOAD_PRICE_DISPLAY = 25;
 
 interface PaywallScreenProps {
   onPaymentSuccess: () => void;
@@ -89,7 +89,7 @@ export function PaywallScreen({
       key: RAZORPAY_KEY,
       amount: DOWNLOAD_PRICE_PAISE,
       currency: "INR",
-      name: "ProResume",
+      name: "JobGrabberResume",
       description: "Resume PDF Download",
       theme: { color: "#6366f1" },
       handler: async (response: { razorpay_payment_id: string }) => {
@@ -149,7 +149,7 @@ export function PaywallScreen({
               <div className="paywall-logo-pill">
                 <Star className="h-4 w-4" />
                 <span className="text-xs font-bold uppercase tracking-widest">
-                  ProResume
+                  JobGrabberResume
                 </span>
               </div>
             </motion.div>
