@@ -5,7 +5,6 @@ import {
   FileDown,
   Layers,
   Loader2,
-  Save,
   Sparkles,
   Star,
   Zap,
@@ -32,12 +31,11 @@ const FEATURES = [
     label: "12+ Pro Templates",
     sub: "Including photo templates",
   },
-  { icon: Save, label: "Auto-Save", sub: "Never lose your work" },
 ];
 
 const RAZORPAY_KEY = "rzp_live_SREVhKAcH7xaGm";
-const DOWNLOAD_PRICE_PAISE = 2500; // ₹25
-const DOWNLOAD_PRICE_DISPLAY = 25;
+const DOWNLOAD_PRICE_PAISE = 100; // ₹1
+const DOWNLOAD_PRICE_DISPLAY = 1;
 
 interface PaywallScreenProps {
   onPaymentSuccess: () => void;

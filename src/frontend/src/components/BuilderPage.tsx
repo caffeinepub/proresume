@@ -1,12 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Award,
   Briefcase,
   Check,
@@ -20,6 +14,7 @@ import {
   GraduationCap,
   Layers,
   Lightbulb,
+  Loader2,
   Palette,
   PencilLine,
   Printer,
@@ -29,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ResumeData } from "../backend";
 import { SAMPLE_RESUME } from "../data/sampleResume";
 import { calculateATSScore } from "../utils/atsScore";
@@ -173,146 +168,91 @@ const TEMPLATES: { id: Template; label: string; description: string }[] = [
 ];
 
 /**
- * Prints only the resume content using a hidden iframe (no pop-up required).
+ * Generates a PDF from the resume element and triggers a browser download.
+ * Uses minimal margins and content-fitted page height to eliminate white space.
  */
-function printResumeOnly() {
-  const resumeEl = document.getElementById("resume-print-target");
-  if (!resumeEl) {
-    console.error("Resume preview not found.");
-    return;
-  }
+async function downloadResumeAsPDF(
+  onProgress?: (msg: string) => void,
+): Promise<void> {
+  const allResumeEls = document.querySelectorAll("#resume-print-target");
+  const resumeEl = allResumeEls[allResumeEls.length - 1] as HTMLElement;
+  if (!resumeEl) throw new Error("Resume element not found");
 
-  const styleNodes = Array.from(
-    document.querySelectorAll('link[rel="stylesheet"], style'),
-  )
-    .map((node) => node.outerHTML)
-    .join("\n");
+  onProgress?.("Rendering resume…");
 
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute(
-    "style",
-    "position:absolute;width:0;height:0;border:0;left:-9999px;top:-9999px;",
-  );
-  document.body.appendChild(iframe);
+  // Dynamically import to keep initial bundle lean
+  const [html2canvasModule, jsPDFModule] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+  const html2canvas = html2canvasModule.default;
+  const { jsPDF } = jsPDFModule;
 
-  try {
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!iframeDoc) {
-      console.error("Could not access iframe document.");
-      document.body.removeChild(iframe);
-      return;
+  // Temporarily inject a style that reduces padding/margins on all resume elements
+  // so the PDF has minimal whitespace around content
+  const styleEl = document.createElement("style");
+  styleEl.id = "pdf-capture-overrides";
+  styleEl.textContent = `
+    #resume-print-target {
+      padding: 18px 22px !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      margin: 0 !important;
     }
+  `;
+  document.head.appendChild(styleEl);
 
-    iframeDoc.open();
-    iframeDoc.write(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Resume</title>
-  ${styleNodes}
-  <style>
-    body { margin: 0; padding: 0; background: white; }
-    @page { margin: 0; size: A4; }
-  </style>
-</head>
-<body>
-  ${resumeEl.outerHTML}
-</body>
-</html>`);
-    iframeDoc.close();
+  // Wait a tick for styles to apply
+  await new Promise((r) => setTimeout(r, 80));
 
-    setTimeout(() => {
-      try {
-        iframe.contentWindow?.print();
-      } catch (e) {
-        console.error("Print failed:", e);
-      }
-      const cleanup = () => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      };
-      iframe.contentWindow?.addEventListener("afterprint", cleanup);
-      setTimeout(cleanup, 2000);
-    }, 600);
-  } catch (e) {
-    console.error("iframe print error:", e);
-    if (document.body.contains(iframe)) {
-      document.body.removeChild(iframe);
+  // Render at 2× scale for crisp output
+  const canvas = await html2canvas(resumeEl, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: "#ffffff",
+    logging: false,
+    width: resumeEl.scrollWidth,
+    height: resumeEl.scrollHeight,
+  });
+
+  // Remove temporary style overrides
+  document.head.removeChild(styleEl);
+
+  onProgress?.("Creating PDF…");
+
+  const A4_W = 210; // mm
+  const A4_H = 297; // mm
+
+  const imgW = A4_W;
+  const imgH = (canvas.height / canvas.width) * imgW;
+  const imgData = canvas.toDataURL("image/jpeg", 0.97);
+
+  // If content fits in one page, use exact content height — no trailing white space
+  if (imgH <= A4_H) {
+    const pdf = new jsPDF({
+      unit: "mm",
+      format: [A4_W, imgH],
+      orientation: "portrait",
+    });
+    pdf.addImage(imgData, "JPEG", 0, 0, imgW, imgH);
+    onProgress?.("Starting download…");
+    pdf.save("resume.pdf");
+  } else {
+    // Multi-page: split across A4 pages
+    const pdf = new jsPDF({
+      unit: "mm",
+      format: "a4",
+      orientation: "portrait",
+    });
+    let y = 0;
+    while (y < imgH) {
+      if (y > 0) pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, -y, imgW, imgH);
+      y += A4_H;
     }
+    onProgress?.("Starting download…");
+    pdf.save("resume.pdf");
   }
-}
-
-interface PrintPreviewDialogProps {
-  open: boolean;
-  onClose: () => void;
-  resume: ResumeData;
-  template: Template;
-  onDownload: () => void;
-}
-
-function PrintPreviewDialog({
-  open,
-  onClose,
-  resume,
-  template,
-  onDownload,
-}: PrintPreviewDialogProps) {
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent
-        className="flex max-h-[90vh] w-[95vw] max-w-5xl flex-col gap-0 p-0"
-        data-ocid="preview.dialog"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <DialogTitle className="font-display text-base font-semibold">
-            Print Preview
-          </DialogTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onClose}
-            data-ocid="preview.close_button"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Scrollable preview body */}
-        <div className="flex-1 overflow-y-auto bg-muted/30 px-6 py-6">
-          <div
-            style={{
-              transformOrigin: "top center",
-              transform: "scale(0.78)",
-              width: "128.2%",
-              marginLeft: "-14.1%",
-            }}
-          >
-            <ResumePreview resume={resume} template={template} />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-border bg-card px-5 py-3">
-          <p className="text-xs text-muted-foreground">
-            This is how your resume will look when printed
-          </p>
-          <Button
-            size="sm"
-            onClick={onDownload}
-            className="h-8 text-xs"
-            data-ocid="preview.download_button"
-          >
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            Download PDF — ₹25
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 interface TemplatePickerProps {
@@ -463,13 +403,77 @@ function MobileBottomBar({
   );
 }
 
+/**
+ * Full-screen download preview: shows the resume preview on the left/top,
+ * and the paywall on the right/bottom. On mobile it stacks vertically.
+ */
+function DownloadPreviewModal({
+  resume,
+  template,
+  onPaymentSuccess,
+  onCancel,
+}: {
+  resume: ResumeData;
+  template: Template;
+  onPaymentSuccess: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-background md:flex-row">
+      {/* Close button */}
+      <button
+        type="button"
+        onClick={onCancel}
+        className="no-print absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-card shadow-md hover:bg-muted"
+        aria-label="Close"
+      >
+        <X className="h-4 w-4" />
+      </button>
+
+      {/* Resume preview pane */}
+      <div className="flex flex-1 flex-col overflow-y-auto bg-muted/30 px-4 pt-4 pb-4">
+        <p className="no-print mb-3 text-center text-xs font-medium text-muted-foreground">
+          Resume Preview
+        </p>
+        <div
+          id="resume-download-preview"
+          className="mx-auto w-full max-w-[794px]"
+        >
+          <ResumePreview resume={resume} template={template} />
+        </div>
+      </div>
+
+      {/* Paywall pane */}
+      <div className="no-print flex w-full shrink-0 flex-col md:w-[420px] md:border-l md:border-border">
+        <PaywallScreen
+          onPaymentSuccess={onPaymentSuccess}
+          onCancel={onCancel}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Fullscreen PDF generation overlay */
+function GeneratingOverlay({ message }: { message: string }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-background/90 backdrop-blur-sm">
+      <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      <p className="text-sm font-medium text-foreground">{message}</p>
+      <p className="text-xs text-muted-foreground">
+        Please wait, your PDF is being prepared…
+      </p>
+    </div>
+  );
+}
+
 export function BuilderPage() {
   const [resume, setResume] = useState<ResumeData>(SAMPLE_RESUME);
   const [activeSection, setActiveSection] = useState<Section>("personal");
   const [template, setTemplate] = useState<Template>("modern");
   const [showATS, setShowATS] = useState(true);
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
-  const [showPaywall, setShowPaywall] = useState(false);
+  const [showDownloadPreview, setShowDownloadPreview] = useState(false);
+  const [generatingMsg, setGeneratingMsg] = useState<string | null>(null);
   const [showAI, setShowAI] = useState(false);
   const [mobileView, setMobileView] = useState<"edit" | "preview">("edit");
 
@@ -482,20 +486,23 @@ export function BuilderPage() {
 
   const atsResult = useMemo(() => calculateATSScore(resume), [resume]);
 
-  const handlePrint = () => {
-    setShowPrintPreview(true);
+  // Show the download preview + paywall modal
+  const handleDownloadClick = () => {
+    setShowDownloadPreview(true);
   };
 
-  // Clicking "Download PDF" from the preview dialog shows the paywall
-  const handleDownloadFromPreview = () => {
-    setShowPrintPreview(false);
-    setShowPaywall(true);
-  };
-
-  // After successful payment, proceed with the actual PDF download
-  const handlePaymentSuccess = () => {
-    setShowPaywall(false);
-    setTimeout(() => printResumeOnly(), 300);
+  // After payment succeeds: generate PDF first (while modal/resume still visible), then close modal
+  const handlePaymentSuccess = async () => {
+    try {
+      await downloadResumeAsPDF((msg) => setGeneratingMsg(msg));
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      // Fallback: open print dialog
+      window.print();
+    } finally {
+      setShowDownloadPreview(false);
+      setGeneratingMsg(null);
+    }
   };
 
   const handleInsertSummary = useCallback(
@@ -581,205 +588,196 @@ export function BuilderPage() {
     }
   };
 
-  // Show paywall full-screen if user clicked Download
-  if (showPaywall) {
-    return (
-      <PaywallScreen
-        onPaymentSuccess={handlePaymentSuccess}
-        onCancel={() => setShowPaywall(false)}
-      />
-    );
-  }
-
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background md:flex-row">
-      {/* ── Desktop sidebar (hidden on mobile) ── */}
-      <EditorSidebar
-        activeSection={activeSection}
-        onSelect={setActiveSection}
-        atsScore={atsResult.total}
-      />
+    <>
+      <div className="flex h-[100dvh] flex-col overflow-hidden bg-background md:flex-row">
+        {/* ── Desktop sidebar (hidden on mobile) ── */}
+        <EditorSidebar
+          activeSection={activeSection}
+          onSelect={setActiveSection}
+          atsScore={atsResult.total}
+        />
 
-      {/* ── Main content area ── */}
-      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
-        {/* ── EDITOR PANEL ── visible on desktop always; on mobile only when mobileView=edit ── */}
-        <div
-          className={`no-print flex flex-col overflow-hidden border-border bg-card ${
-            mobileView === "edit"
-              ? "flex flex-1 border-r md:w-[400px] md:flex-none"
-              : "hidden md:flex md:w-[400px] md:flex-shrink-0 md:border-r"
-          }`}
-        >
-          {/* Editor header */}
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h2 className="font-display text-sm font-semibold text-foreground md:text-base">
-              {SECTION_TITLES[activeSection]}
-            </h2>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAI(true)}
-                className="h-7 gap-1.5 border-violet-200 bg-violet-50 px-2.5 text-xs font-medium text-violet-700 hover:bg-violet-100 hover:text-violet-800"
-                data-ocid="ai.assistant.open_modal_button"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                AI Assist
-              </Button>
-            </div>
-          </div>
-
-          {/* Mobile section pill nav (hidden on desktop) */}
-          <div className="md:hidden">
-            <MobileSectionNav
-              activeSection={activeSection}
-              onSelect={setActiveSection}
-            />
-          </div>
-
-          {/* Editor content */}
-          <div className="flex-1 overflow-y-auto p-4 pb-20 md:p-5 md:pb-5">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeSection}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.18 }}
-              >
-                {renderEditor()}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-
-        {/* ── PREVIEW + ATS AREA ── visible on desktop always; on mobile only when mobileView=preview ── */}
-        <div
-          className={`flex flex-col overflow-hidden bg-muted/30 ${
-            mobileView === "preview"
-              ? "flex flex-1"
-              : "hidden md:flex md:flex-1"
-          }`}
-        >
-          {/* Preview top bar */}
-          <div className="no-print flex items-center justify-between border-b border-border bg-card px-4 py-2.5">
-            <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">
-                Live Preview
-              </span>
-            </div>
-            <div className="flex flex-shrink-0 items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handlePrint}
-                className="h-8 text-xs"
-                data-ocid="preview.primary_button"
-              >
-                <Printer className="mr-1.5 h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Print / Export PDF</span>
-                <span className="sm:hidden">Export</span>
-              </Button>
-            </div>
-          </div>
-
-          {/* ATS Score Panel */}
-          <div className="no-print border-b border-border bg-card">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between px-4 py-2.5 text-left"
-              onClick={() => setShowATS((v) => !v)}
-              data-ocid="ats.panel.toggle"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-foreground">
-                  ATS Score
-                </span>
-                <ATSScoreBadge score={atsResult.total} />
-              </div>
-              {showATS ? (
-                <ChevronUp className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              )}
-            </button>
-            <AnimatePresence>
-              {showATS && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  style={{ overflow: "hidden" }}
-                >
-                  <ATSGauge result={atsResult} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Resume Preview — scaled on mobile to fit width */}
+        {/* ── Main content area ── */}
+        <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
+          {/* ── EDITOR PANEL ── */}
           <div
-            id="resume-preview-wrapper"
-            className="flex-1 overflow-y-auto px-4 pt-4 pb-20 md:px-6 md:py-8"
+            className={`no-print flex flex-col overflow-hidden border-border bg-card ${
+              mobileView === "edit"
+                ? "flex flex-1 border-r md:w-[400px] md:flex-none"
+                : "hidden md:flex md:w-[400px] md:flex-shrink-0 md:border-r"
+            }`}
           >
-            {/* Mobile scaled wrapper */}
-            <div className="md:hidden">
-              <MobileResumeScale>
-                <ResumePreview resume={resume} template={template} />
-              </MobileResumeScale>
+            {/* Editor header */}
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h2 className="font-display text-sm font-semibold text-foreground md:text-base">
+                {SECTION_TITLES[activeSection]}
+              </h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAI(true)}
+                  className="h-7 gap-1.5 border-violet-200 bg-violet-50 px-2.5 text-xs font-medium text-violet-700 hover:bg-violet-100 hover:text-violet-800"
+                  data-ocid="ai.assistant.open_modal_button"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  AI Assist
+                </Button>
+              </div>
             </div>
-            {/* Desktop normal */}
-            <div className="hidden md:block">
-              <ResumePreview resume={resume} template={template} />
+
+            {/* Mobile section pill nav */}
+            <div className="md:hidden">
+              <MobileSectionNav
+                activeSection={activeSection}
+                onSelect={setActiveSection}
+              />
+            </div>
+
+            {/* Editor content */}
+            <div className="flex-1 overflow-y-auto p-4 pb-20 md:p-5 md:pb-5">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeSection}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  {renderEditor()}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* ── PREVIEW + ATS AREA ── */}
+          <div
+            className={`flex flex-col overflow-hidden bg-muted/30 ${
+              mobileView === "preview"
+                ? "flex flex-1"
+                : "hidden md:flex md:flex-1"
+            }`}
+          >
+            {/* Preview top bar */}
+            <div className="no-print flex items-center justify-between border-b border-border bg-card px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                <span className="text-sm font-medium text-foreground">
+                  Live Preview
+                </span>
+              </div>
+              <div className="flex flex-shrink-0 items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadClick}
+                  className="h-8 text-xs"
+                  data-ocid="preview.primary_button"
+                >
+                  <Printer className="mr-1.5 h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Print / Export PDF</span>
+                  <span className="sm:hidden">Export</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* ATS Score Panel */}
+            <div className="no-print border-b border-border bg-card">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-4 py-2.5 text-left"
+                onClick={() => setShowATS((v) => !v)}
+                data-ocid="ats.panel.toggle"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    ATS Score
+                  </span>
+                  <ATSScoreBadge score={atsResult.total} />
+                </div>
+                {showATS ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </button>
+              <AnimatePresence>
+                {showATS && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ overflow: "hidden" }}
+                  >
+                    <ATSGauge result={atsResult} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Resume Preview */}
+            <div
+              id="resume-preview-wrapper"
+              className="flex-1 overflow-y-auto px-4 pt-4 pb-20 md:px-6 md:py-8"
+            >
+              {/* Mobile scaled wrapper */}
+              <div className="md:hidden">
+                <MobileResumeScale>
+                  <ResumePreview resume={resume} template={template} />
+                </MobileResumeScale>
+              </div>
+              {/* Desktop normal */}
+              <div className="hidden md:block">
+                <ResumePreview resume={resume} template={template} />
+              </div>
             </div>
           </div>
         </div>
+
+        {/* ── Mobile bottom navigation bar ── */}
+        <MobileBottomBar
+          mobileView={mobileView}
+          onChangeView={setMobileView}
+          onDownload={handleDownloadClick}
+          atsScore={atsResult.total}
+        />
+
+        {/* AI Assistant Panel */}
+        <AIAssistantPanel
+          open={showAI}
+          onClose={() => setShowAI(false)}
+          resumeData={resume}
+          onInsertSummary={handleInsertSummary}
+        />
+
+        {/* Customer Care Widget */}
+        <CustomerCareWidget />
       </div>
 
-      {/* ── Mobile bottom navigation bar ── */}
-      <MobileBottomBar
-        mobileView={mobileView}
-        onChangeView={setMobileView}
-        onDownload={handlePrint}
-        atsScore={atsResult.total}
-      />
+      {/* Download Preview Modal — shown when user taps Download */}
+      {showDownloadPreview && (
+        <DownloadPreviewModal
+          resume={resume}
+          template={template}
+          onPaymentSuccess={handlePaymentSuccess}
+          onCancel={() => setShowDownloadPreview(false)}
+        />
+      )}
 
-      {/* Print Preview Dialog (free to view) */}
-      <PrintPreviewDialog
-        open={showPrintPreview}
-        onClose={() => setShowPrintPreview(false)}
-        resume={resume}
-        template={template}
-        onDownload={handleDownloadFromPreview}
-      />
-
-      {/* AI Assistant Panel */}
-      <AIAssistantPanel
-        open={showAI}
-        onClose={() => setShowAI(false)}
-        resumeData={resume}
-        onInsertSummary={handleInsertSummary}
-      />
-
-      {/* Customer Care Widget */}
-      <CustomerCareWidget />
-    </div>
+      {/* PDF Generating overlay */}
+      {generatingMsg && <GeneratingOverlay message={generatingMsg} />}
+    </>
   );
 }
 
 /**
  * Scales the A4 resume preview to fit the current mobile viewport width.
- * Uses a CSS transform so the resume renders at full resolution but appears smaller.
  */
 function MobileResumeScale({ children }: { children: React.ReactNode }) {
-  // A4 width in px at 96dpi ≈ 794px. We leave ~32px total horizontal padding.
   const A4_WIDTH = 794;
   const PADDING = 32;
-
-  // Calculate scale using window.innerWidth at render time.
-  // This is fine as a static calculation — a resize listener would be overkill here.
   const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 390;
   const availableWidth = viewportWidth - PADDING;
   const scale = Math.min(1, availableWidth / A4_WIDTH);
@@ -788,7 +786,6 @@ function MobileResumeScale({ children }: { children: React.ReactNode }) {
     <div
       style={{
         width: "100%",
-        // Shrink the container height proportionally to avoid extra whitespace
         height: `calc(${A4_WIDTH * Math.SQRT2}px * ${scale})`,
         overflow: "visible",
         marginBottom: "1rem",
