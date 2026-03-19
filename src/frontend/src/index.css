@@ -6,52 +6,39 @@
 
 @layer base {
   :root {
-    --background: 0.97 0.006 240;
-    --foreground: 0.15 0.025 255;
-    --card: 1 0 0;
-    --card-foreground: 0.15 0.025 255;
-    --popover: 1 0 0;
-    --popover-foreground: 0.15 0.025 255;
-    --primary: 0.62 0.15 185;
-    --primary-foreground: 0.99 0.005 185;
-    --secondary: 0.93 0.01 240;
-    --secondary-foreground: 0.35 0.025 255;
-    --muted: 0.93 0.01 240;
-    --muted-foreground: 0.52 0.02 255;
-    --accent: 0.62 0.15 185;
-    --accent-foreground: 0.99 0.005 185;
-    --destructive: 0.55 0.22 25;
-    --destructive-foreground: 0.99 0 0;
-    --border: 0.88 0.012 255;
-    --input: 0.88 0.012 255;
-    --ring: 0.62 0.15 185;
+    --background: 210 15% 97%;
+    --foreground: 240 20% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 20% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 20% 15%;
+    --primary: 185 45% 45%;
+    --primary-foreground: 185 30% 98%;
+    --secondary: 240 5% 93%;
+    --secondary-foreground: 240 15% 35%;
+    --muted: 240 5% 93%;
+    --muted-foreground: 240 8% 52%;
+    --accent: 185 45% 45%;
+    --accent-foreground: 185 30% 98%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 99%;
+    --border: 240 5% 88%;
+    --input: 240 5% 88%;
+    --ring: 185 45% 45%;
     --radius: 0.5rem;
-    --chart-1: 0.62 0.15 185;
-    --chart-2: 0.68 0.17 155;
-    --chart-3: 0.58 0.2 300;
-    --chart-4: 0.72 0.18 70;
-    --chart-5: 0.62 0.2 30;
-    --sidebar: 0.175 0.025 255;
-    --sidebar-foreground: 0.93 0.01 240;
-    --sidebar-primary: 0.62 0.15 185;
-    --sidebar-primary-foreground: 0.99 0.005 185;
-    --sidebar-accent: 0.27 0.03 255;
-    --sidebar-accent-foreground: 0.93 0.01 240;
-    --sidebar-border: 0.27 0.03 255;
-    --sidebar-ring: 0.62 0.15 185;
-
-    /* Paywall design tokens */
-    --pw-bg-from: 0.11 0.04 255;
-    --pw-bg-to: 0.08 0.02 250;
-    --pw-card-bg: 0.13 0.03 260;
-    --pw-card-border: 0.22 0.04 255;
-    --pw-heading: 0.96 0.008 240;
-    --pw-muted: 0.58 0.02 255;
-    --pw-accent: 0.72 0.18 185;
-    --pw-accent-glow: 0.62 0.15 185;
-    --pw-price: 0.95 0.01 240;
-    --pw-border: 0.2 0.03 255;
-    --pw-feature-bg: 0.17 0.03 255;
+    --chart-1: 185 45% 45%;
+    --chart-2: 155 50% 45%;
+    --chart-3: 300 45% 45%;
+    --chart-4: 70 50% 50%;
+    --chart-5: 30 50% 48%;
+    --sidebar: 240 20% 15%;
+    --sidebar-foreground: 240 5% 93%;
+    --sidebar-primary: 185 45% 45%;
+    --sidebar-primary-foreground: 185 30% 98%;
+    --sidebar-accent: 240 15% 25%;
+    --sidebar-accent-foreground: 240 5% 93%;
+    --sidebar-border: 240 15% 25%;
+    --sidebar-ring: 185 45% 45%;
   }
 
   * {
@@ -63,17 +50,17 @@
   }
 }
 
-/* Paywall Styles */
+/* Paywall Styles — hex-based for broad browser support */
 .paywall-bg {
-  background: oklch(var(--pw-bg-from));
+  background: #0a0d1e;
   background-image: radial-gradient(
       ellipse 80% 50% at 50% -20%,
-      oklch(var(--pw-accent-glow) / 0.18) 0%,
+      rgba(14, 165, 165, 0.18) 0%,
       transparent 60%
     ),
     radial-gradient(
       ellipse 60% 40% at 80% 100%,
-      oklch(0.55 0.18 300 / 0.12) 0%,
+      rgba(120, 40, 200, 0.12) 0%,
       transparent 55%
     );
 }
@@ -81,15 +68,8 @@
 .paywall-grid {
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(
-      oklch(var(--pw-card-border) / 0.3) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      oklch(var(--pw-card-border) / 0.3) 1px,
-      transparent 1px
-    );
+  background-image: linear-gradient(rgba(28, 32, 64, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28, 32, 64, 0.3) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(
     ellipse 70% 70% at 50% 40%,
@@ -111,7 +91,7 @@
   top: -150px;
   left: 50%;
   transform: translateX(-50%);
-  background: oklch(var(--pw-accent-glow) / 0.12);
+  background: rgba(14, 165, 165, 0.12);
 }
 
 .paywall-orb-2 {
@@ -119,25 +99,21 @@
   height: 350px;
   bottom: -100px;
   right: 10%;
-  background: oklch(0.55 0.2 300 / 0.1);
+  background: rgba(120, 40, 200, 0.1);
 }
 
 .paywall-card {
-  background: oklch(var(--pw-card-bg));
-  border: 1px solid oklch(var(--pw-card-border));
+  background: #0e1122;
+  border: 1px solid #1c2040;
   border-radius: 20px;
-  box-shadow: 0 0 0 1px oklch(var(--pw-accent-glow) / 0.08), 0 32px 80px
-    oklch(0.05 0.02 255 / 0.6), 0 8px 32px oklch(0.05 0.02 255 / 0.4);
+  box-shadow: 0 0 0 1px rgba(14, 165, 165, 0.08), 0 32px 80px
+    rgba(5, 6, 20, 0.6), 0 8px 32px rgba(5, 6, 20, 0.4);
   overflow: hidden;
 }
 
 .paywall-header {
-  background: linear-gradient(
-    160deg,
-    oklch(var(--pw-card-bg)) 0%,
-    oklch(0.15 0.04 255) 100%
-  );
-  border-bottom: 1px solid oklch(var(--pw-card-border));
+  background: linear-gradient(160deg, #0e1122 0%, #111530 100%);
+  border-bottom: 1px solid #1c2040;
 }
 
 .paywall-logo-pill {
@@ -146,9 +122,9 @@
   gap: 6px;
   padding: 4px 14px;
   border-radius: 9999px;
-  background: oklch(var(--pw-accent-glow) / 0.15);
-  border: 1px solid oklch(var(--pw-accent-glow) / 0.3);
-  color: oklch(var(--pw-accent));
+  background: rgba(14, 165, 165, 0.15);
+  border: 1px solid rgba(14, 165, 165, 0.3);
+  color: #22d3ee;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -156,7 +132,7 @@
 
 .pw-italic {
   font-style: italic;
-  color: oklch(var(--pw-accent));
+  color: #22d3ee;
 }
 
 .paywall-price-block {
@@ -169,7 +145,7 @@
   font-family: "Playfair Display", serif;
   font-size: 1.75rem;
   font-weight: 600;
-  color: oklch(var(--pw-accent));
+  color: #22d3ee;
   line-height: 1;
 }
 
@@ -177,7 +153,7 @@
   font-family: "Playfair Display", serif;
   font-size: 4rem;
   font-weight: 800;
-  color: oklch(var(--pw-price));
+  color: #eceff6;
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -187,11 +163,11 @@
   align-items: center;
   gap: 5px;
   font-size: 0.7rem;
-  color: oklch(var(--pw-muted));
+  color: #7a82a0;
   padding: 3px 10px;
-  background: oklch(var(--pw-feature-bg));
+  background: #131726;
   border-radius: 9999px;
-  border: 1px solid oklch(var(--pw-border));
+  border: 1px solid #171b30;
 }
 
 .paywall-features-grid {
@@ -206,8 +182,8 @@
   gap: 10px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: oklch(var(--pw-feature-bg));
-  border: 1px solid oklch(var(--pw-border));
+  background: #131726;
+  border: 1px solid #171b30;
 }
 
 .paywall-feature-icon {
@@ -217,37 +193,35 @@
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: oklch(var(--pw-accent-glow) / 0.15);
-  border: 1px solid oklch(var(--pw-accent-glow) / 0.25);
-  color: oklch(var(--pw-accent));
+  background: rgba(14, 165, 165, 0.15);
+  border: 1px solid rgba(14, 165, 165, 0.25);
+  color: #22d3ee;
   flex-shrink: 0;
 }
 
 .paywall-cta-btn {
-  background: oklch(var(--pw-accent)) !important;
-  color: oklch(0.1 0.02 255) !important;
+  background: #22d3ee !important;
+  color: #0a0d1e !important;
   border: none !important;
   font-weight: 700 !important;
   font-size: 0.9rem !important;
   height: 48px !important;
   border-radius: 12px !important;
   letter-spacing: 0.01em;
-  box-shadow: 0 0 24px oklch(var(--pw-accent-glow) / 0.35), 0 4px 12px
-    oklch(0.05 0.02 255 / 0.4) !important;
+  box-shadow: 0 0 24px rgba(14, 165, 165, 0.35), 0 4px 12px rgba(5, 6, 20, 0.4) !important;
   transition: all 0.2s ease !important;
 }
 
 .paywall-cta-btn:hover:not(:disabled) {
-  background: oklch(0.77 0.16 185) !important;
-  box-shadow: 0 0 36px oklch(var(--pw-accent-glow) / 0.5), 0 6px 16px
-    oklch(0.05 0.02 255 / 0.4) !important;
+  background: #38e0f5 !important;
+  box-shadow: 0 0 36px rgba(14, 165, 165, 0.5), 0 6px 16px rgba(5, 6, 20, 0.4) !important;
   transform: translateY(-1px);
 }
 
 .paywall-outline-btn {
   background: transparent !important;
-  color: oklch(var(--pw-heading)) !important;
-  border: 1px solid oklch(var(--pw-card-border)) !important;
+  color: #f2f4f9 !important;
+  border: 1px solid #1c2040 !important;
   border-radius: 10px !important;
   padding: 8px 20px !important;
   font-size: 0.85rem !important;
@@ -255,8 +229,8 @@
 }
 
 .paywall-outline-btn:hover {
-  border-color: oklch(var(--pw-accent-glow) / 0.5) !important;
-  background: oklch(var(--pw-feature-bg)) !important;
+  border-color: rgba(14, 165, 165, 0.5) !important;
+  background: #131726 !important;
 }
 
 .paywall-signout-btn {
@@ -264,7 +238,7 @@
   align-items: center;
   gap: 6px;
   font-size: 0.75rem;
-  color: oklch(var(--pw-muted));
+  color: #7a82a0;
   transition: color 0.15s ease;
   background: none;
   border: none;
@@ -274,7 +248,7 @@
 }
 
 .paywall-signout-btn:hover {
-  color: oklch(var(--pw-heading));
+  color: #f2f4f9;
 }
 
 .paywall-spinner-ring {
@@ -284,8 +258,8 @@
   width: 64px;
   height: 64px;
   border-radius: 9999px;
-  background: oklch(var(--pw-accent-glow) / 0.12);
-  border: 1px solid oklch(var(--pw-accent-glow) / 0.25);
+  background: rgba(14, 165, 165, 0.12);
+  border: 1px solid rgba(14, 165, 165, 0.25);
 }
 
 .paywall-error-icon {
@@ -295,23 +269,23 @@
   width: 64px;
   height: 64px;
   border-radius: 9999px;
-  background: oklch(0.55 0.22 25 / 0.12);
-  border: 1px solid oklch(0.55 0.22 25 / 0.25);
-  color: oklch(0.65 0.22 25);
+  background: rgba(200, 60, 30, 0.12);
+  border: 1px solid rgba(200, 60, 30, 0.25);
+  color: #e05a3a;
 }
 
 /* Paywall text color utilities */
 .text-pw-heading {
-  color: oklch(var(--pw-heading));
+  color: #f2f4f9;
 }
 .text-pw-muted {
-  color: oklch(var(--pw-muted));
+  color: #7a82a0;
 }
 .text-pw-accent {
-  color: oklch(var(--pw-accent));
+  color: #22d3ee;
 }
 .border-pw-border {
-  border-color: oklch(var(--pw-border));
+  border-color: #171b30;
 }
 
 @media print {

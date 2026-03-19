@@ -25,7 +25,7 @@ const FEATURES = [
     sub: "Match any job description",
   },
   { icon: Layers, label: "Live Resume Preview", sub: "See changes instantly" },
-  { icon: FileDown, label: "PDF Export", sub: "Print-ready, ATS-friendly" },
+  { icon: FileDown, label: "PDF Export", sub: "Download-ready, ATS-friendly" },
   {
     icon: Sparkles,
     label: "12+ Pro Templates",
@@ -156,7 +156,8 @@ export function PaywallScreen({
               Download your <em className="pw-italic">resume</em>
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-pw-muted">
-              One-time payment to download your ATS-perfect resume as PDF.
+              One-time payment of ₹{DOWNLOAD_PRICE_DISPLAY} to download your
+              ATS-perfect resume as PDF.
             </p>
 
             {/* Price block */}

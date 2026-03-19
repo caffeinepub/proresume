@@ -1,5 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import {
   Award,
   Briefcase,
@@ -17,14 +19,13 @@ import {
   Loader2,
   Palette,
   PencilLine,
-  Printer,
   Sparkles,
   Target,
   User,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ResumeData } from "../backend";
 import { SAMPLE_RESUME } from "../data/sampleResume";
 import { calculateATSScore } from "../utils/atsScore";
@@ -169,56 +170,59 @@ const TEMPLATES: { id: Template; label: string; description: string }[] = [
 
 /**
  * Generates a PDF from the resume element and triggers a browser download.
- * Uses minimal margins and content-fitted page height to eliminate white space.
+ * Uses bundled html2canvas and jsPDF (not CDN) so it works behind ICP's CSP.
  */
 async function downloadResumeAsPDF(
   onProgress?: (msg: string) => void,
 ): Promise<void> {
-  const allResumeEls = document.querySelectorAll("#resume-print-target");
-  const resumeEl = allResumeEls[allResumeEls.length - 1] as HTMLElement;
+  // Use the last #resume-print-target in the DOM (rendered in the preview area).
+  const resumeEl =
+    (document.querySelectorAll("#resume-print-target")[
+      document.querySelectorAll("#resume-print-target").length - 1
+    ] as HTMLElement | undefined) ?? null;
+
   if (!resumeEl) throw new Error("Resume element not found");
 
-  onProgress?.("Rendering resume…");
+  onProgress?.("Rendering resume\u2026");
 
-  // Dynamically import to keep initial bundle lean
-  const [html2canvasModule, jsPDFModule] = await Promise.all([
-    import("html2canvas"),
-    import("jspdf"),
-  ]);
-  const html2canvas = html2canvasModule.default;
-  const { jsPDF } = jsPDFModule;
+  // Clone into an off-screen container to capture full height
+  const offScreen = document.createElement("div");
+  offScreen.style.cssText = [
+    "position: fixed",
+    "top: -9999px",
+    "left: -9999px",
+    "width: 794px",
+    "height: auto",
+    "overflow: visible",
+    "z-index: -1",
+    "background: #ffffff",
+  ].join("; ");
 
-  // Temporarily inject a style that reduces padding/margins on all resume elements
-  // so the PDF has minimal whitespace around content
-  const styleEl = document.createElement("style");
-  styleEl.id = "pdf-capture-overrides";
-  styleEl.textContent = `
-    #resume-print-target {
-      padding: 18px 22px !important;
-      box-shadow: none !important;
-      border-radius: 0 !important;
-      margin: 0 !important;
-    }
-  `;
-  document.head.appendChild(styleEl);
+  const clone = resumeEl.cloneNode(true) as HTMLElement;
+  clone.style.cssText +=
+    "; box-shadow: none !important; border-radius: 0 !important; margin: 0 !important; padding: 18px 22px !important;";
+  offScreen.appendChild(clone);
+  document.body.appendChild(offScreen);
 
-  // Wait a tick for styles to apply
-  await new Promise((r) => setTimeout(r, 80));
+  // Wait 300ms for fonts/images to settle before capturing
+  await new Promise((r) => setTimeout(r, 300));
 
-  // Render at 2× scale for crisp output
-  const canvas = await html2canvas(resumeEl, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    logging: false,
-    width: resumeEl.scrollWidth,
-    height: resumeEl.scrollHeight,
-  });
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await html2canvas(offScreen, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+      windowWidth: 794,
+      width: offScreen.scrollWidth,
+      height: offScreen.scrollHeight,
+    });
+  } finally {
+    document.body.removeChild(offScreen);
+  }
 
-  // Remove temporary style overrides
-  document.head.removeChild(styleEl);
-
-  onProgress?.("Creating PDF…");
+  onProgress?.("Creating PDF\u2026");
 
   const A4_W = 210; // mm
   const A4_H = 297; // mm
@@ -227,7 +231,8 @@ async function downloadResumeAsPDF(
   const imgH = (canvas.height / canvas.width) * imgW;
   const imgData = canvas.toDataURL("image/jpeg", 0.97);
 
-  // If content fits in one page, use exact content height — no trailing white space
+  let blob: Blob;
+
   if (imgH <= A4_H) {
     const pdf = new jsPDF({
       unit: "mm",
@@ -235,10 +240,8 @@ async function downloadResumeAsPDF(
       orientation: "portrait",
     });
     pdf.addImage(imgData, "JPEG", 0, 0, imgW, imgH);
-    onProgress?.("Starting download…");
-    pdf.save("resume.pdf");
+    blob = pdf.output("blob");
   } else {
-    // Multi-page: split across A4 pages
     const pdf = new jsPDF({
       unit: "mm",
       format: "a4",
@@ -250,9 +253,20 @@ async function downloadResumeAsPDF(
       pdf.addImage(imgData, "JPEG", 0, -y, imgW, imgH);
       y += A4_H;
     }
-    onProgress?.("Starting download…");
-    pdf.save("resume.pdf");
+    blob = pdf.output("blob");
   }
+
+  onProgress?.("Starting download\u2026");
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "resume.pdf";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
 }
 
 interface TemplatePickerProps {
@@ -383,7 +397,7 @@ function MobileBottomBar({
           <span
             className={`absolute -right-1.5 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white ${scoreColor}`}
           >
-            {atsScore >= 80 ? "✓" : "!"}
+            {atsScore >= 80 ? "\u2713" : "!"}
           </span>
         </div>
         Preview
@@ -403,66 +417,55 @@ function MobileBottomBar({
   );
 }
 
-/**
- * Full-screen download preview: shows the resume preview on the left/top,
- * and the paywall on the right/bottom. On mobile it stacks vertically.
- */
-function DownloadPreviewModal({
-  resume,
-  template,
-  onPaymentSuccess,
-  onCancel,
+/** Fullscreen PDF generation overlay */
+function GeneratingOverlay({
+  message,
+  error,
+  onRetry,
 }: {
-  resume: ResumeData;
-  template: Template;
-  onPaymentSuccess: () => void;
-  onCancel: () => void;
+  message: string;
+  error?: string | null;
+  onRetry?: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-background md:flex-row">
-      {/* Close button */}
-      <button
-        type="button"
-        onClick={onCancel}
-        className="no-print absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-card shadow-md hover:bg-muted"
-        aria-label="Close"
-      >
-        <X className="h-4 w-4" />
-      </button>
-
-      {/* Resume preview pane */}
-      <div className="flex flex-1 flex-col overflow-y-auto bg-muted/30 px-4 pt-4 pb-4">
-        <p className="no-print mb-3 text-center text-xs font-medium text-muted-foreground">
-          Resume Preview
-        </p>
-        <div
-          id="resume-download-preview"
-          className="mx-auto w-full max-w-[794px]"
-        >
-          <ResumePreview resume={resume} template={template} />
-        </div>
-      </div>
-
-      {/* Paywall pane */}
-      <div className="no-print flex w-full shrink-0 flex-col md:w-[420px] md:border-l md:border-border">
-        <PaywallScreen
-          onPaymentSuccess={onPaymentSuccess}
-          onCancel={onCancel}
-        />
-      </div>
-    </div>
-  );
-}
-
-/** Fullscreen PDF generation overlay */
-function GeneratingOverlay({ message }: { message: string }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-background/90 backdrop-blur-sm">
-      <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      <p className="text-sm font-medium text-foreground">{message}</p>
-      <p className="text-xs text-muted-foreground">
-        Please wait, your PDF is being prepared…
-      </p>
+    <div
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-4 bg-background/90 backdrop-blur-sm"
+      data-ocid="pdf.generating.loading_state"
+    >
+      {error ? (
+        <>
+          <div
+            className="flex max-w-sm flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-6 py-5 text-center shadow-lg"
+            data-ocid="pdf.download.error_state"
+          >
+            <X className="h-8 w-8 text-red-500" />
+            <p className="text-sm font-semibold text-red-700">
+              PDF download failed
+            </p>
+            <p className="text-xs text-red-600">
+              {error} Please try again or contact support.
+            </p>
+            {onRetry && (
+              <Button
+                onClick={onRetry}
+                size="sm"
+                className="mt-1 bg-red-600 text-white hover:bg-red-700"
+                data-ocid="pdf.retry.button"
+              >
+                Try Again
+              </Button>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm font-medium text-foreground">{message}</p>
+          <p className="text-xs text-muted-foreground">
+            Please wait, your PDF is being prepared\u2026
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -472,10 +475,12 @@ export function BuilderPage() {
   const [activeSection, setActiveSection] = useState<Section>("personal");
   const [template, setTemplate] = useState<Template>("modern");
   const [showATS, setShowATS] = useState(true);
-  const [showDownloadPreview, setShowDownloadPreview] = useState(false);
   const [generatingMsg, setGeneratingMsg] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [showAI, setShowAI] = useState(false);
   const [mobileView, setMobileView] = useState<"edit" | "preview">("edit");
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState(false);
 
   const updateResume = useCallback(
     (updater: (prev: ResumeData) => ResumeData) => {
@@ -486,23 +491,48 @@ export function BuilderPage() {
 
   const atsResult = useMemo(() => calculateATSScore(resume), [resume]);
 
-  // Show the download preview + paywall modal
-  const handleDownloadClick = () => {
-    setShowDownloadPreview(true);
-  };
-
-  // After payment succeeds: generate PDF first (while modal/resume still visible), then close modal
-  const handlePaymentSuccess = async () => {
+  const runDownload = useCallback(async () => {
+    setDownloadError(null);
+    setGeneratingMsg("Preparing your resume\u2026");
     try {
       await downloadResumeAsPDF((msg) => setGeneratingMsg(msg));
+      setGeneratingMsg(null);
     } catch (err) {
       console.error("PDF generation failed:", err);
-      // Fallback: open print dialog
-      window.print();
-    } finally {
-      setShowDownloadPreview(false);
-      setGeneratingMsg(null);
+      const msg =
+        err instanceof Error
+          ? `${err.message}. `
+          : "An unexpected error occurred. ";
+      setDownloadError(msg);
+      setGeneratingMsg("Download failed");
     }
+  }, []);
+
+  // Show paywall first, then trigger download after successful payment
+  const handleDownloadClick = () => {
+    setShowPaywall(true);
+  };
+
+  const handlePaymentSuccess = () => {
+    setShowPaywall(false);
+    setPendingDownload(true);
+  };
+
+  // Wait for React to re-mount the resume element after paywall is dismissed,
+  // then trigger the download. Without this delay the #resume-print-target
+  // element doesn't exist in the DOM yet and the PDF silently fails.
+  useEffect(() => {
+    if (!pendingDownload || showPaywall) return;
+    setPendingDownload(false);
+    // Wait 2 extra frames for React to fully paint the resume element
+    const timer = setTimeout(() => {
+      runDownload();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [pendingDownload, showPaywall, runDownload]);
+
+  const handlePaywallCancel = () => {
+    setShowPaywall(false);
   };
 
   const handleInsertSummary = useCallback(
@@ -588,19 +618,29 @@ export function BuilderPage() {
     }
   };
 
+  // Show paywall fullscreen when needed
+  if (showPaywall) {
+    return (
+      <PaywallScreen
+        onPaymentSuccess={handlePaymentSuccess}
+        onCancel={handlePaywallCancel}
+      />
+    );
+  }
+
   return (
     <>
       <div className="flex h-[100dvh] flex-col overflow-hidden bg-background md:flex-row">
-        {/* ── Desktop sidebar (hidden on mobile) ── */}
+        {/* \u2500\u2500 Desktop sidebar (hidden on mobile) \u2500\u2500 */}
         <EditorSidebar
           activeSection={activeSection}
           onSelect={setActiveSection}
           atsScore={atsResult.total}
         />
 
-        {/* ── Main content area ── */}
+        {/* \u2500\u2500 Main content area \u2500\u2500 */}
         <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
-          {/* ── EDITOR PANEL ── */}
+          {/* \u2500\u2500 EDITOR PANEL \u2500\u2500 */}
           <div
             className={`no-print flex flex-col overflow-hidden border-border bg-card ${
               mobileView === "edit"
@@ -651,7 +691,7 @@ export function BuilderPage() {
             </div>
           </div>
 
-          {/* ── PREVIEW + ATS AREA ── */}
+          {/* \u2500\u2500 PREVIEW + ATS AREA \u2500\u2500 */}
           <div
             className={`flex flex-col overflow-hidden bg-muted/30 ${
               mobileView === "preview"
@@ -675,9 +715,11 @@ export function BuilderPage() {
                   className="h-8 text-xs"
                   data-ocid="preview.primary_button"
                 >
-                  <Printer className="mr-1.5 h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Print / Export PDF</span>
-                  <span className="sm:hidden">Export</span>
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">
+                    Download PDF - \u20b91
+                  </span>
+                  <span className="sm:hidden">Download</span>
                 </Button>
               </div>
             </div>
@@ -736,7 +778,7 @@ export function BuilderPage() {
           </div>
         </div>
 
-        {/* ── Mobile bottom navigation bar ── */}
+        {/* \u2500\u2500 Mobile bottom navigation bar \u2500\u2500 */}
         <MobileBottomBar
           mobileView={mobileView}
           onChangeView={setMobileView}
@@ -756,18 +798,14 @@ export function BuilderPage() {
         <CustomerCareWidget />
       </div>
 
-      {/* Download Preview Modal — shown when user taps Download */}
-      {showDownloadPreview && (
-        <DownloadPreviewModal
-          resume={resume}
-          template={template}
-          onPaymentSuccess={handlePaymentSuccess}
-          onCancel={() => setShowDownloadPreview(false)}
+      {/* PDF Generating overlay */}
+      {generatingMsg && (
+        <GeneratingOverlay
+          message={generatingMsg}
+          error={downloadError}
+          onRetry={downloadError ? runDownload : undefined}
         />
       )}
-
-      {/* PDF Generating overlay */}
-      {generatingMsg && <GeneratingOverlay message={generatingMsg} />}
     </>
   );
 }
