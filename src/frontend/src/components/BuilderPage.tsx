@@ -175,11 +175,21 @@ const TEMPLATES: { id: Template; label: string; description: string }[] = [
 async function downloadResumeAsPDF(
   onProgress?: (msg: string) => void,
 ): Promise<void> {
-  // Use the last #resume-print-target in the DOM (rendered in the preview area).
+  const allEls = Array.from(
+    document.querySelectorAll<HTMLElement>("#resume-print-target"),
+  );
+  // Find the first element that is fully visible (no ancestor with display:none)
   const resumeEl =
-    (document.querySelectorAll("#resume-print-target")[
-      document.querySelectorAll("#resume-print-target").length - 1
-    ] as HTMLElement | undefined) ?? null;
+    allEls.find((el) => {
+      let node: HTMLElement | null = el;
+      while (node) {
+        if (getComputedStyle(node).display === "none") return false;
+        node = node.parentElement;
+      }
+      return true;
+    }) ??
+    allEls[0] ??
+    null;
 
   if (!resumeEl) throw new Error("Resume element not found");
 
@@ -527,7 +537,7 @@ export function BuilderPage() {
     // Wait 2 extra frames for React to fully paint the resume element
     const timer = setTimeout(() => {
       runDownload();
-    }, 400);
+    }, 600);
     return () => clearTimeout(timer);
   }, [pendingDownload, showPaywall, runDownload]);
 
@@ -617,16 +627,6 @@ export function BuilderPage() {
         return null;
     }
   };
-
-  // Show paywall fullscreen when needed
-  if (showPaywall) {
-    return (
-      <PaywallScreen
-        onPaymentSuccess={handlePaymentSuccess}
-        onCancel={handlePaywallCancel}
-      />
-    );
-  }
 
   return (
     <>
@@ -805,6 +805,16 @@ export function BuilderPage() {
           error={downloadError}
           onRetry={downloadError ? runDownload : undefined}
         />
+      )}
+
+      {/* Paywall overlay -- rendered on top, resume stays in DOM */}
+      {showPaywall && (
+        <div className="fixed inset-0 z-50 overflow-auto">
+          <PaywallScreen
+            onPaymentSuccess={handlePaymentSuccess}
+            onCancel={handlePaywallCancel}
+          />
+        </div>
       )}
     </>
   );
